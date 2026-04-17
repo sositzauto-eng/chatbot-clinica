@@ -1,7 +1,7 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
-console.log("Iniciando o bot da clinica no Railway...");
+console.log("Iniciando o bot da clínica no Railway...");
 
 const client = new Client({
     authStrategy: new LocalAuth(),
@@ -14,8 +14,8 @@ const client = new Client({
             '--no-zygote',
             '--single-process'
         ],
-        // No Railway com Nixpacks, o caminho geralmente é este:
-        executablePath: '/usr/bin/google-chrome'
+        // O SEGREDO: Ele vai usar o caminho que você definiu nas variáveis do Railway
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable'
     }
 });
 

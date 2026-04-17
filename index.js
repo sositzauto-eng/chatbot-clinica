@@ -3,6 +3,14 @@ const qrcode = require('qrcode-terminal');
 
 console.log("Iniciando o bot da clínica no Railway...");
 
+// Lista de possíveis caminhos do Chrome no Linux/Railway
+const chromePaths = [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/chromium'
+];
+
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -11,11 +19,10 @@ const client = new Client({
             '--no-sandbox',
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
-            '--no-zygote',
-            '--single-process'
+            '--no-zygote'
         ],
-        // O SEGREDO: Ele vai usar o caminho que você definiu nas variáveis do Railway
-        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable'
+        // Tenta usar a variável do Railway ou um dos caminhos padrão
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || chromePaths.find(path => require('fs').existsSync(path))
     }
 });
 
@@ -63,12 +70,10 @@ client.on('message', async msg => {
             const r = user.data;
             const resumo = `*RESUMO*\nNome: ${r.nome}\nIdade: ${r.idade}\nEspecialidade: ${r.especialidade}\nDor: ${r.dor}/10`;
             await client.sendMessage(from, resumo);
-            await client.sendMessage(from, "Recebemos seus dados!");
+            await client.sendMessage(from, "Recebemos seus dados! Um atendente entrará em contato em breve.");
             delete sessions[from];
         }
     }
 });
 
-client.initialize().catch(err => {
-    console.error("Erro fatal ao iniciar:", err.message);
-});
+client.initialize().catch(err => console.error("Erro fatal:", err.message));

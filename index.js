@@ -1,7 +1,9 @@
 const { Client, LocalAuth } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 
-// Inicializa o cliente com configurações para Servidor (Railway/Linux)
+console.log("Iniciando o sistema... Aguarde o carregamento do navegador.");
+
+// Configuração robusta para rodar no Railway sem travar
 const client = new Client({
     authStrategy: new LocalAuth(),
     puppeteer: {
@@ -16,123 +18,95 @@ const client = new Client({
             '--single-process',
             '--disable-gpu'
         ],
+        // Tenta encontrar o Chrome no caminho do Railway ou no padrão Linux
+        executablePath: process.env.PUPPETEER_EXECUTABLE_PATH || '/usr/bin/google-chrome-stable'
     }
 });
 
-// Banco de dados temporário (em memória) para os atendimentos ativos
+// Banco de dados em memória para gerenciar múltiplos pacientes
 const sessions = {};
 
+// Fluxo de perguntas da clínica
 const questions = [
     { key: "nome", text: "Olá! Sou o assistente virtual da clínica. Para começarmos, qual o seu *nome completo*?" },
     { key: "idade", text: "Prazer, {{nome}}! Qual a sua *idade*?" },
-    { key: "whatsapp", text: "Confirma para mim o seu melhor número de *WhatsApp com DDD*?" },
     { key: "convenio", text: "Você possui *convênio médico* ou seria atendimento particular?" },
-    { key: "especialidade", text: "Qual *especialidade* ou médico você procura hoje?" },
-    { key: "motivo", text: "Entendi. Pode descrever brevemente o *motivo da consulta* ou o que está sentindo?" },
-    { key: "dor", text: "Em uma escala de 0 a 10, qual o nível da sua *dor ou desconforto* no momento?" },
-    { key: "anamnese", text: "Para finalizar o pré-atendimento: Possui alguma doença crônica, alergia ou faz uso de medicação contínua?" }
+    { key: "especialidade", text: "Qual *especialidade* ou tipo de consulta você procura hoje?" },
+    { key: "dor", text: "Em uma escala de 0 a 10, qual o nível da sua *dor ou desconforto* atual?" },
+    { key: "historico", text: "Para finalizar: Você possui alguma doença crônica, alergia ou faz uso de medicação contínua?" }
 ];
 
-// Função Inteligente: Extrai o nome e limpa "ruídos" de saudação
+// Função para limpar saudações e isolar o nome do paciente
 function cleanName(input) {
     let text = input.toLowerCase();
-    const noise = [
-        "bom dia", "boa tarde", "boa noite", "olá", "ola", "oi", "oie",
-        "meu nome é", "meu nome e", "me chamo", "sou o", "sou a", "aqui é o", "aqui é a"
-    ];
-
+    const noise = ["bom dia", "boa tarde", "boa noite", "olá", "ola", "oi", "meu nome é", "me chamo", "sou o", "sou a"];
     noise.forEach(word => {
         const regex = new RegExp(`\\b${word}\\b`, 'gi');
         text = text.replace(regex, "");
     });
-
-    // Remove pontuação e espaços extras
     text = text.replace(/[,\.\-\!\?]/g, "").trim();
-
-    // Capitaliza (Adonias Sadda)
-    return text.split(" ")
-               .filter(part => part.length > 0)
-               .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-               .join(" ") || input;
+    return text.split(" ").map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ") || input;
 }
 
-// Evento: Gerar QR Code nos Logs do Railway
+// Geração do QR Code nos logs
 client.on('qr', (qr) => {
-    console.log('--- ESCANEIE O QR CODE ABAIXO ---');
+    console.log('----------------------------------------------------');
+    console.log('QR CODE GERADO! ESCANEIE COM SEU WHATSAPP AGORA:');
     qrcode.generate(qr, { small: true });
+    console.log('----------------------------------------------------');
 });
 
-// Evento: Bot Pronto
 client.on('ready', () => {
-    console.log('Assistente Virtual da Clínica está ONLINE!');
+    console.log('TUDO PRONTO! O bot está online e respondendo.');
 });
 
-// Evento: Receber Mensagem
+// Lógica de conversa
 client.on('message', async msg => {
     const from = msg.from;
-    const text = msg.body;
-
-    // Ignora mensagens de grupos
+    
+    // Ignora grupos para não gastar memória
     if (from.includes('@g.us')) return;
 
-    // Se não houver sessão ativa, inicia do zero
     if (!sessions[from]) {
         sessions[from] = { step: 0, data: {} };
         await client.sendMessage(from, questions[0].text);
         return;
     }
 
-    let userSession = sessions[from];
-    let currentStep = userSession.step;
+    let user = sessions[from];
+    let step = user.step;
 
-    // Salva a informação baseada no passo atual
-    const currentKey = questions[currentStep].key;
-    if (currentKey === "nome") {
-        userSession.data.nome = cleanName(text);
+    // Salva a resposta
+    if (questions[step].key === "nome") {
+        user.data.nome = cleanName(msg.body);
     } else {
-        userSession.data[currentKey] = text;
+        user.data[questions[step].key] = msg.body;
     }
 
-    // Avança para o próximo passo
-    userSession.step++;
-    const nextStep = userSession.step;
-
-    if (nextStep < questions.length) {
+    user.step++;
+    
+    if (user.step < questions.length) {
         // Envia a próxima pergunta
-        let nextMsg = questions[nextStep].text.replace('{{nome}}', userSession.data.nome);
+        let nextMsg = questions[user.step].text.replace('{{nome}}', user.data.nome);
         setTimeout(async () => {
             await client.sendMessage(from, nextMsg);
         }, 1000);
     } else {
-        // Finaliza e gera o relatório
-        await finishFlow(from, userSession.data);
-        delete sessions[from]; // Limpa a memória
+        // Finaliza e gera o resumo
+        const r = user.data;
+        let urgencia = parseInt(r.dor) >= 8 ? "ALTA 🚨" : "NORMAL";
+
+        const resumo = `*NOVO PRÉ-ATENDIMENTO*\n` +
+                       `Paciente: ${r.nome}\n` +
+                       `Especialidade: ${r.especialidade}\n` +
+                       `Dor: ${r.dor}/10\n` +
+                       `Prioridade: ${urgencia}`;
+
+        await client.sendMessage(from, resumo);
+        await client.sendMessage(from, `Obrigado, ${r.nome}. Recebemos seus dados e logo entraremos em contato.`);
+        delete sessions[from];
     }
 });
 
-async function finishFlow(chatId, data) {
-    // Lógica de Triagem por dor
-    let prioridade = "NORMAL";
-    const dor = parseInt(data.dor);
-    if (dor >= 8) prioridade = "ALTA 🚨 (Urgência)";
-    else if (dor >= 5) prioridade = "MÉDIA ⚠️ (Prioritário)";
-
-    const resumo = `*RESUMO PRÉ-ATENDIMENTO*\n` +
-                   `----------------------------\n` +
-                   `👤 *Paciente:* ${data.nome}\n` +
-                   `🎂 *Idade:* ${data.idade}\n` +
-                   `📞 *WhatsApp:* ${data.whatsapp}\n` +
-                   `💳 *Convênio:* ${data.convenio}\n` +
-                   `🩺 *Especialidade:* ${data.especialidade}\n` +
-                   `📝 *Motivo:* ${data.motivo}\n` +
-                   `🌡️ *Nível de Dor:* ${data.dor}/10\n` +
-                   `💊 *Histórico:* ${data.anamnese}\n` +
-                   `----------------------------\n` +
-                   `📊 *PRIORIDADE:* ${prioridade}`;
-
-    await client.sendMessage(chatId, resumo);
-    await client.sendMessage(chatId, `Obrigado, *${data.nome}*. Seus dados foram enviados para nossa secretária. Entraremos em contato em instantes para confirmar o horário.`);
-}
-
-// Inicialização
-client.initialize();
+// Inicializa o robô
+client.initialize().catch(err => console.error("Erro na inicialização:", err));

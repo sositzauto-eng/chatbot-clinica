@@ -1,14 +1,18 @@
 {
   "name": "chatbot-clinica",
-  "version": "2.0.0",
-  "description": "Chatbot inteligente para clínica médica no Railway",
+  "version": "2.1.0",
+  "description": "Bot de pré-atendimento clínico",
   "main": "index.js",
+  "engines": {
+    "node": "20.x"
+  },
   "scripts": {
-    "start": "node index.js"
+    "start": "node index.js",
+    "postinstall": "npx puppeteer install"
   },
   "dependencies": {
     "whatsapp-web.js": "^1.23.0",
     "qrcode-terminal": "^0.12.0",
-    "puppeteer": "^19.11.1"
+    "puppeteer": "^22.6.0"
   }
 }
